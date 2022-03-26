@@ -2,17 +2,21 @@
 # -*- coding: utf-8 -*-
 
 import abc
+import inspect
 import json
 import datetime
 import logging
 import hashlib
 import uuid
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http import server, HTTPStatus
 from optparse import OptionParser
+from weakref import WeakKeyDictionary
 
 SALT = "Otus"
 ADMIN_LOGIN = "admin"
 ADMIN_SALT = "42"
+
+# Todo up to HTTPStatus
 OK = 200
 BAD_REQUEST = 400
 FORBIDDEN = 403
@@ -37,25 +41,64 @@ GENDERS = {
 
 
 class Field:
-    def __init__(self, required=None, nullable=None):
+    def __init__(self, required=False, nullable=False):
         self.required = required
         self.nullable = nullable
 
+    def check_constrains(self, value):
+        if self.required and not value:
+            raise ValueError(f"Field {self.__class__.__name__} is required")
+        if self.nullable and not value:
+            raise ValueError(f"Field {self.__class__.__name__} cannot be empty")
+
 
 class CharField(Field):
-    pass
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.data = WeakKeyDictionary()
+
+    def __get__(self, instance, owner):
+        return self.data.get(instance)
+
+    def __set__(self, instance, value):
+        if type(value) not in (str, int):
+            raise ValueError(f"Invalid value for {self.__class__.__name__}: {type(value).__name__}")
+        self.data[instance] = value
 
 
 class EmailField(CharField):
-    pass
+    def valid_field(self, value):
+        if "@" not in value:
+            raise ValueError(f"Invalid value for {self.__class__.__name__} don't have '@'")
+        else:
+            return True
 
 
 class ArgumentsField(Field):
-    pass
+    def valid_field(self, value):
+        try:
+            json.dumps(value)
+            return True
+        except TypeError as e:
+            err_msg = f"Invalid value for {self.__class__.__name__}, not JSON"
+            logging.warning(err_msg)
+            raise ValueError(err_msg)
 
 
 class PhoneField(Field):
-    pass
+    def valid_field(self, value):
+        err_msg = []
+        if not type(value) in (str, int):
+            err_msg.append(f"{self.__class__.__name__} must be a string or a number. Not {type(value)}")
+        if not len(value) == 11:
+            err_msg.append(f"{self.__class__.__name__} must be 11 digits long")
+        if not str(value).startswith("7"):
+            err_msg.append(f"{self.__class__.__name__} must start with the number 7")
+
+        if len(err_msg) > 0:
+            raise ValueError("\n".join(err_msg))
+        else:
+            return True
 
 
 class DateField(Field):
@@ -63,7 +106,13 @@ class DateField(Field):
 
 
 class BirthDayField(Field):
-    pass
+    def valid_field(self, value):
+        date = datetime.datetime.strptime(value, "%d.%m.%Y")
+        delta = datetime.timedelta(days=(365 * 70))
+        if datetime.datetime.now() - delta < date:
+            return True
+        else:
+            raise ValueError(f"Invalid value for {self.__class__.__name__}, date > 70 year")
 
 
 class GenderField(Field):
@@ -76,24 +125,30 @@ class ClientIDsField(Field):
 
 class ClientsInterestsRequest(object):
     client_ids = ClientIDsField(required=True)
-    date = DateField(required=False, nullable=True)
+    date = DateField(nullable=True)
 
 
 class OnlineScoreRequest(object):
-    first_name = CharField(required=False, nullable=True)
-    last_name = CharField(required=False, nullable=True)
-    email = EmailField(required=False, nullable=True)
-    phone = PhoneField(required=False, nullable=True)
-    birthday = BirthDayField(required=False, nullable=True)
-    gender = GenderField(required=False, nullable=True)
+    first_name = CharField(nullable=True)
+    last_name = CharField(nullable=True)
+    email = EmailField(nullable=True)
+    phone = PhoneField(nullable=True)
+    birthday = BirthDayField(nullable=True)
+    gender = GenderField(nullable=True)
 
 
 class MethodRequest(object):
-    account = CharField(required=False, nullable=True)
+    account = CharField(nullable=True)
     login = CharField(required=True, nullable=True)
     token = CharField(required=True, nullable=True)
     arguments = ArgumentsField(required=True, nullable=True)
-    method = CharField(required=True, nullable=False)
+    method = CharField(required=True)
+
+    def __init__(self, request):
+        self.request = request
+
+    def get_response(self):
+        return None, None
 
     @property
     def is_admin(self):
@@ -111,13 +166,16 @@ def check_auth(request):
 
 
 def method_handler(request, ctx, store):
-    response, code = None, None
+    auth = check_auth(request)
+    methode_request = MethodRequest(request)
+    response, code = methode_request.get_response()
     return response, code
 
 
-class MainHTTPHandler(BaseHTTPRequestHandler):
+class MainHTTPHandler(server.BaseHTTPRequestHandler):
     router = {
-        "method": method_handler
+        "online_score": method_handler,
+        "clients_interests": method_handler,
     }
     store = None
 
@@ -167,7 +225,7 @@ if __name__ == "__main__":
     (opts, args) = op.parse_args()
     logging.basicConfig(filename=opts.log, level=logging.INFO,
                         format='[%(asctime)s] %(levelname).1s %(message)s', datefmt='%Y.%m.%d %H:%M:%S')
-    server = HTTPServer(("localhost", opts.port), MainHTTPHandler)
+    server = server.HTTPServer(("localhost", opts.port), MainHTTPHandler)
     logging.info("Starting server at %s" % opts.port)
     try:
         server.serve_forever()
