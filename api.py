@@ -7,8 +7,8 @@ import datetime
 import logging
 import hashlib
 import uuid
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from optparse import OptionParser
-from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
 
 SALT = "Otus"
 ADMIN_LOGIN = "admin"
@@ -36,11 +36,13 @@ GENDERS = {
 }
 
 
-class CharField(object):
-    pass
+class Field:
+    def __init__(self, required=None, nullable=None):
+        self.required = required
+        self.nullable = nullable
 
 
-class ArgumentsField(object):
+class CharField(Field):
     pass
 
 
@@ -48,23 +50,27 @@ class EmailField(CharField):
     pass
 
 
-class PhoneField(object):
+class ArgumentsField(Field):
     pass
 
 
-class DateField(object):
+class PhoneField(Field):
     pass
 
 
-class BirthDayField(object):
+class DateField(Field):
     pass
 
 
-class GenderField(object):
+class BirthDayField(Field):
     pass
 
 
-class ClientIDsField(object):
+class GenderField(Field):
+    pass
+
+
+class ClientIDsField(Field):
     pass
 
 
@@ -134,7 +140,7 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
             if path in self.router:
                 try:
                     response, code = self.router[path]({"body": request, "headers": self.headers}, context, self.store)
-                except Exception, e:
+                except Exception as e:
                     logging.exception("Unexpected error: %s" % e)
                     code = INTERNAL_ERROR
             else:
@@ -143,13 +149,14 @@ class MainHTTPHandler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
+
         if code not in ERRORS:
             r = {"response": response, "code": code}
         else:
             r = {"error": response or ERRORS.get(code, "Unknown Error"), "code": code}
         context.update(r)
         logging.info(context)
-        self.wfile.write(json.dumps(r))
+        self.wfile.write(json.dumps(r).encode())
         return
 
 
