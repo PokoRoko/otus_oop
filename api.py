@@ -102,13 +102,22 @@ class PhoneField(Field):
 
 
 class DateField(Field):
-    pass
+    def valid_field(self, value):
+        try:
+            date = datetime.datetime.strptime(value, "%d.%m.%Y")
+            return True
+        except ValueError:
+            raise ValueError(f"{self.__class__.__name__} {value} does not match format '%d.%m.%Y'")
 
 
 class BirthDayField(Field):
     def valid_field(self, value):
-        date = datetime.datetime.strptime(value, "%d.%m.%Y")
-        delta = datetime.timedelta(days=(365 * 70))
+        try:
+            date = datetime.datetime.strptime(value, "%d.%m.%Y")
+            delta = datetime.timedelta(days=(365 * 70))
+        except ValueError:
+            raise ValueError(f"{self.__class__.__name__} {value} does not match format '%d.%m.")
+
         if datetime.datetime.now() - delta < date:
             return True
         else:
@@ -116,11 +125,20 @@ class BirthDayField(Field):
 
 
 class GenderField(Field):
-    pass
+    def valid_field(self, value):
+        if value not in (0, 1, 2):
+            raise ValueError(f"Invalid value for {self.__class__.__name__} can only be 0 or 1 or 2")
+        else:
+            return True
 
 
 class ClientIDsField(Field):
-    pass
+    def valid_field(self, value):
+        try:
+            ids_tuple = set(value)
+            sum(ids_tuple)
+        except TypeError:
+            raise TypeError(f"list {self.__class__.__name__} can include only integers")
 
 
 class ClientsInterestsRequest(object):
