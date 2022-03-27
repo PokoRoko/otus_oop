@@ -63,7 +63,10 @@ class CharField(Field):
     def __set__(self, instance, value):
         if type(value) not in (str, int):
             raise ValueError(f"Invalid value for {self.__class__.__name__}: {type(value).__name__}")
-        self.data[instance] = value
+        if self.nullable and not value:
+            self.data[instance] = ''
+        else:
+            self.data[instance] = value
 
 
 class EmailField(CharField):
@@ -141,20 +144,6 @@ class ClientIDsField(Field):
             raise TypeError(f"list {self.__class__.__name__} can include only integers")
 
 
-class ClientsInterestsRequest(object):
-    client_ids = ClientIDsField(required=True)
-    date = DateField(nullable=True)
-
-
-class OnlineScoreRequest(object):
-    first_name = CharField(nullable=True)
-    last_name = CharField(nullable=True)
-    email = EmailField(nullable=True)
-    phone = PhoneField(nullable=True)
-    birthday = BirthDayField(nullable=True)
-    gender = GenderField(nullable=True)
-
-
 class MethodRequest(object):
     account = CharField(nullable=True)
     login = CharField(required=True, nullable=True)
@@ -162,15 +151,57 @@ class MethodRequest(object):
     arguments = ArgumentsField(required=True, nullable=True)
     method = CharField(required=True)
 
-    def __init__(self, request):
-        self.request = request
+    def __init__(self, account, login, token, arguments, method):
+        self.account = account
+        self.login = login
+        self.token = token
+        self.arguments = arguments
+        self.method = method
 
-    def get_response(self):
-        return None, None
+    # def get_response(self):
+    #     return "None", 777
 
     @property
     def is_admin(self):
         return self.login == ADMIN_LOGIN
+
+
+class ClientsInterestsRequest(MethodRequest):
+    client_ids = ClientIDsField(required=True)
+    date = DateField(nullable=True)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.client_ids = self.arguments.get("client_ids")
+        self.date = self.arguments.get("date")
+
+    def get_response(self):
+        return "None", 777
+
+
+class OnlineScoreRequest(MethodRequest):
+    first_name = CharField(nullable=True)
+    last_name = CharField(nullable=True)
+    email = EmailField(nullable=True)
+    phone = PhoneField(nullable=True)
+    birthday = BirthDayField(nullable=True)
+    gender = GenderField(nullable=True)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.first_name = self.arguments.get("first_name")
+        self.last_name = self.arguments.get("last_name")
+        self.email = self.arguments.get("email")
+        self.phone = self.arguments.get("phone")
+        self.birthday = self.arguments.get("birthday")
+        self.gender = self.arguments.get("gender")
+
+    def get_response(self):
+        print(self.first_name)
+        #print(self.__dict__.items())
+        return "None", 777
 
 
 def check_auth(request):
@@ -184,8 +215,22 @@ def check_auth(request):
 
 
 def method_handler(request, ctx, store):
-    auth = check_auth(request)
-    methode_request = MethodRequest(request)
+    request_method = request["body"].get("method")
+    supported_requests = {
+        "online_score": OnlineScoreRequest,
+        "clients_interests": ClientsInterestsRequest,
+    }
+
+    if request_method in supported_requests:
+        #print(request)
+        methode_request = supported_requests[request_method](**request["body"])
+    else:
+        return f"Unsupported method: {request_method}", HTTPStatus.METHOD_NOT_ALLOWED
+    # ToDo Доделать аутентификацию
+    # auth = check_auth(methode_request)
+    # if not auth:
+    #     return {"code": HTTPStatus.FORBIDDEN, "error": "Forbidden"}
+
     response, code = methode_request.get_response()
     return response, code
 
