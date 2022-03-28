@@ -12,6 +12,8 @@ from http import server, HTTPStatus
 from optparse import OptionParser
 from weakref import WeakKeyDictionary
 
+from scoring import get_score
+
 SALT = "Otus"
 ADMIN_LOGIN = "admin"
 ADMIN_SALT = "42"
@@ -197,11 +199,28 @@ class OnlineScoreRequest(MethodRequest):
         self.phone = self.arguments.get("phone")
         self.birthday = self.arguments.get("birthday")
         self.gender = self.arguments.get("gender")
+        self._valid_request()
+
+    def _valid_request(self):
+        """
+        Аргументы валидны, если валидны все поля по отдельности и если присутсвует хоть одна пара
+        phone-email, first name-last name, gender-birthday с непустыми значениями.
+        """
+        valid_pairs = any([
+            all([self.first_name, self.last_name]),
+            all([self.email, self.phone]),
+            all([self.birthday, self.gender])
+        ])
+        if not valid_pairs:
+            raise ValueError(f"Invalid request {self.__class__.__name__} must be at least one pair"
+                             f"(phone-email) or (first name-last name) or (gender-birthday)")
 
     def get_response(self):
-        print(self.first_name)
-        #print(self.__dict__.items())
-        return "None", 777
+        if self.is_admin:
+            res = 42
+        else:
+            res = get_score(store=None, **self.arguments)
+        return {"response": res}, 200
 
 
 def check_auth(request):
@@ -222,7 +241,7 @@ def method_handler(request, ctx, store):
     }
 
     if request_method in supported_requests:
-        #print(request)
+        # print(request)
         methode_request = supported_requests[request_method](**request["body"])
     else:
         return f"Unsupported method: {request_method}", HTTPStatus.METHOD_NOT_ALLOWED
@@ -230,7 +249,6 @@ def method_handler(request, ctx, store):
     # auth = check_auth(methode_request)
     # if not auth:
     #     return {"code": HTTPStatus.FORBIDDEN, "error": "Forbidden"}
-
     response, code = methode_request.get_response()
     return response, code
 
