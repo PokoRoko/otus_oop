@@ -1,16 +1,16 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import json
 import datetime
-import logging
 import hashlib
+import json
+import logging
 import uuid
-from http import server, HTTPStatus
+from http import HTTPStatus, server
 from optparse import OptionParser
 from weakref import WeakKeyDictionary
 
-from scoring import get_score, get_interests
+from scoring import get_interests, get_score
 
 SALT = "Otus"
 ADMIN_LOGIN = "admin"
@@ -76,9 +76,9 @@ class ArgumentsField(CharField):
         try:
             json.dumps(value)
             return True
-        except TypeError as e:
+        except TypeError as error:
             err_msg = f"Invalid value for {self.__class__.__name__}, not JSON"
-            logging.warning(err_msg)
+            logging.warning(err_msg + str(error))
             raise ValueError(err_msg)
 
 
@@ -101,7 +101,7 @@ class PhoneField(CharField):
 class DateField(CharField):
     def valid_field(self, value):
         try:
-            date = datetime.datetime.strptime(value, "%d.%m.%Y")
+            _ = datetime.datetime.strptime(value, "%d.%m.%Y")
             return True
         except ValueError:
             raise ValueError(f"{self.__class__.__name__} {value} does not match format '%d.%m.%Y'")
@@ -268,7 +268,8 @@ class MainHTTPHandler(server.BaseHTTPRequestHandler):
         try:
             data_string = self.rfile.read(int(self.headers['Content-Length']))
             request = json.loads(data_string)
-        except:
+        except Exception as error:
+            logging.warning(f"BAD_REQUEST ERROR: {error}")
             code = HTTPStatus.BAD_REQUEST
 
         if request:

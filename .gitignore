@@ -1,6 +1,7 @@
 ### Develop ignore
 tteesstt.py
 .idea
+.flake8
 
 ### Python template
 # Byte-compiled / optimized / DLL files
