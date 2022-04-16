@@ -32,8 +32,7 @@ class TestSuite(unittest.TestCase):
             request["token"] = hashlib.sha512(datetime.datetime.now().strftime("%Y%m%d%H") + api.ADMIN_SALT).hexdigest()
         else:
             msg = request.get("account", "") + request.get("login", "") + api.SALT
-            print(msg)
-            request["token"] = hashlib.sha512(msg).hexdigest()
+            request["token"] = hashlib.sha512(msg.encode()).hexdigest()
 
     def test_empty_request(self):
         _, code = self.get_response({})
@@ -78,7 +77,7 @@ class TestSuite(unittest.TestCase):
         request = {"account": "horns&hoofs", "login": "h&f", "method": "online_score", "arguments": arguments}
         self.set_valid_auth(request)
         response, code = self.get_response(request)
-        self.assertEqual(api.INVALID_REQUEST, code, arguments)
+        self.assertEqual(HTTPStatus.UNPROCESSABLE_ENTITY, code, arguments)
         self.assertTrue(len(response))
 
     @cases([
@@ -121,7 +120,7 @@ class TestSuite(unittest.TestCase):
         request = {"account": "horns&hoofs", "login": "h&f", "method": "clients_interests", "arguments": arguments}
         self.set_valid_auth(request)
         response, code = self.get_response(request)
-        self.assertEqual(api.INVALID_REQUEST, code, arguments)
+        self.assertEqual(HTTPStatus.UNPROCESSABLE_ENTITY, code, arguments)
         self.assertTrue(len(response))
 
     @cases([

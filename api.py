@@ -184,7 +184,7 @@ class OnlineScoreRequest(MethodRequest):
             raise ValueError(f"Invalid request {self.__class__.__name__} must be at least one pair"
                              f"(phone-email) or (first name-last name) or (gender-birthday)")
 
-    def get_response(self):
+    def create_response(self):
         if self.is_admin:
             res = 42
         else:
@@ -215,7 +215,7 @@ def method_handler(request, ctx, store):
         try:
             methode_request = supported_requests[request_method](**request["body"])
         except (ValueError, TypeError) as error:
-            return str(error), HTTPStatus.METHOD_NOT_ALLOWED
+            return str(error), HTTPStatus.UNPROCESSABLE_ENTITY
 
     else:
         return f"Unsupported method: {request_method}", HTTPStatus.METHOD_NOT_ALLOWED
