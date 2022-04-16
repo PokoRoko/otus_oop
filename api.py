@@ -26,15 +26,14 @@ GENDERS = {
 }
 
 
+class ValidationError(Exception):
+    pass
+
+
 class Field:
     def __init__(self, required=False, nullable=False):
         self.required = required
         self.nullable = nullable
-
-
-class CharField(Field):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
         self.data = WeakKeyDictionary()
 
     def __get__(self, instance, owner):
@@ -46,11 +45,11 @@ class CharField(Field):
             self.data[instance] = ''
         else:
             self.valid_field(value)
+        self.data[instance] = value
 
-        if type(value) not in (str, int, dict):
-            raise ValueError(f"Invalid value for {self.__class__.__name__}: {type(value).__name__}")
-        else:
-            self.data[instance] = value
+    def __set_name__(self, owner, name):
+        self.public_name = name
+        logging.info(f"Created {self.public_name}")
 
     def check_constrains(self, value):
         if self.required and not value:
@@ -63,26 +62,29 @@ class CharField(Field):
         pass
 
 
+class CharField(Field):
+    def valid_field(self, value):
+        if type(value) not in (str, int, dict):
+            raise ValidationError(f"Invalid value for {self.__class__.__name__}: {type(value).__name__}")
+
+
 class EmailField(CharField):
     def valid_field(self, value):
         if "@" not in value:
-            raise ValueError(f"Invalid value for {self.__class__.__name__} don't have '@'")
-        else:
-            return True
+            raise ValidationError(f"Invalid value for {self.__class__.__name__} don't have '@'")
 
 
 class ArgumentsField(CharField):
     def valid_field(self, value):
         try:
             json.dumps(value)
-            return True
         except TypeError as error:
             err_msg = f"Invalid value for {self.__class__.__name__}, not JSON"
             logging.warning(err_msg + str(error))
-            raise ValueError(err_msg)
+            raise ValidationError(err_msg)
 
 
-class PhoneField(CharField):
+class PhoneField(Field):
     def valid_field(self, value):
         err_msg = []
         if not type(value) in (str, int):
@@ -93,40 +95,35 @@ class PhoneField(CharField):
             err_msg.append(f"{self.__class__.__name__} must start with the number 7")
 
         if len(err_msg) > 0:
-            raise ValueError("\n".join(err_msg))
-        else:
-            return True
+            raise ValidationError("\n".join(err_msg))
 
 
-class DateField(CharField):
+class DateField(Field):
     def valid_field(self, value):
         try:
             _ = datetime.datetime.strptime(value, "%d.%m.%Y")
-            return True
         except ValueError:
-            raise ValueError(f"{self.__class__.__name__} {value} does not match format '%d.%m.%Y'")
+            raise ValidationError(f"{self.__class__.__name__} {value} does not match format '%d.%m.%Y'")
 
 
-class BirthDayField(CharField):
+class BirthDayField(Field):
     def valid_field(self, value):
         try:
             date = datetime.datetime.strptime(value, "%d.%m.%Y")
             delta = datetime.timedelta(days=(365 * 70))
         except ValueError:
-            raise ValueError(f"{self.__class__.__name__} {value} does not match format '%d.%m.")
+            raise ValidationError(f"{self.__class__.__name__} {value} does not match format '%d.%m.")
 
         if datetime.datetime.now() - delta < date:
-            return True
+            pass
         else:
-            raise ValueError(f"Invalid value for {self.__class__.__name__}, date > 70 year")
+            raise ValidationError(f"Invalid value for {self.__class__.__name__}, date > 70 year")
 
 
-class GenderField(CharField):
+class GenderField(Field):
     def valid_field(self, value):
         if value not in (0, 1, 2):
-            raise ValueError(f"Invalid value for {self.__class__.__name__} can only be 0 or 1 or 2")
-        else:
-            return True
+            raise ValidationError(f"Invalid value for {self.__class__.__name__} can only be 0 or 1 or 2")
 
 
 class ClientIDsField(CharField):
@@ -135,7 +132,7 @@ class ClientIDsField(CharField):
             ids_tuple = set(value)
             sum(ids_tuple)
         except TypeError:
-            raise TypeError(f"list {self.__class__.__name__} can include only integers")
+            raise ValidationError(f"list {self.__class__.__name__} can include only integers")
 
 
 class MethodRequest(object):
@@ -146,11 +143,8 @@ class MethodRequest(object):
     method = CharField(required=True)
 
     def __init__(self, **kwargs):
-        self.account = kwargs.get('account')
-        self.login = kwargs.get('login')
-        self.token = kwargs.get('token')
-        self.arguments = kwargs.get('arguments')
-        self.method = kwargs.get('method')
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
     @property
     def is_admin(self):
@@ -161,13 +155,7 @@ class ClientsInterestsRequest(MethodRequest):
     client_ids = ClientIDsField(required=True)
     date = DateField(nullable=True)
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
-        self.client_ids = self.arguments.get("client_ids")
-        self.date = self.arguments.get("date")
-
-    def get_response(self):
+    def create_response(self):
         res = {}
         for cid in self.arguments.get("client_ids"):
             res[cid] = get_interests(store=None, cid=cid)
@@ -181,16 +169,6 @@ class OnlineScoreRequest(MethodRequest):
     phone = PhoneField(nullable=True)
     birthday = BirthDayField(nullable=True)
     gender = GenderField(nullable=True)
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.first_name = self.arguments.get("first_name")
-        self.last_name = self.arguments.get("last_name")
-        self.email = self.arguments.get("email")
-        self.phone = self.arguments.get("phone")
-        self.birthday = self.arguments.get("birthday")
-        self.gender = self.arguments.get("gender")
-        self._valid_request()
 
     def _valid_request(self):
         """
@@ -237,7 +215,7 @@ def method_handler(request, ctx, store):
         try:
             methode_request = supported_requests[request_method](**request["body"])
         except (ValueError, TypeError) as error:
-            return str(error), HTTPStatus.UNPROCESSABLE_ENTITY
+            return str(error), HTTPStatus.METHOD_NOT_ALLOWED
 
     else:
         return f"Unsupported method: {request_method}", HTTPStatus.METHOD_NOT_ALLOWED
@@ -247,7 +225,7 @@ def method_handler(request, ctx, store):
         response = "Forbidden"
         code = HTTPStatus.FORBIDDEN
     else:
-        response, code = methode_request.get_response()
+        response, code = methode_request.create_response()
     return response, code
 
 
